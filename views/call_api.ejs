@@ -1,0 +1,191 @@
+<html>
+	<head>
+		<link rel="stylesheet" href="https://bootswatch.com/yeti/bootstrap.min.css">
+		<link rel="stylesheet" href="/css/main.css">
+	</head>
+	<body>
+		<div>
+			<div>
+				<nav class="navbar navbar-inverse" role="navigation" style="padding-left:130px;">
+					<ul class="nav navbar-nav">
+						<li><a class="navbar-brand" href="/">SM Caen</a></li>
+						<li><a href="/">Home</a></li>
+						<li><a href="/about">About</a></li>
+            <li class="active"><a href="/call_api">Get Tweets<span class="sr-only">(current)</span></a></li>
+					</ul>
+				</nav>
+			</div>
+			<br/>
+			<div class="container">
+				<div class="span12 jumbotron text-center">
+          <form name="twitter_request">
+						<div class="form-group form-inline">
+								<label class="sr-only" for="collection">Collection Name</label>
+								<select id="collection_name" class="form-control" required>
+								</select>
+							<button type="button" class="btn btn-default" data-toggle="modal" data-target=".add_collection">
+								  <span class="glyphicon glyphicon-plus" aria-hidden="true"></span> Add a collection
+							</button>
+							<div class="modal fade add_collection" tabindex="-1" role="dialog" aria-labelledby="mySmallModalLabel" id="myModal">
+							  <div class="modal-dialog" role="document">
+							    <div class="modal-content">
+										<div class="modal-header">
+							        <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+							        <h4 class="modal-title">Add a collection</h4>
+							      </div>
+										<div class="modal-body">
+											<div>
+					        		<input type="text" class="form-control" id="new_collection" placeholder="Nom de la collection">
+											</div>
+											<p>Collections utilisées :<br/>
+											<span id="collections_string">
+											</span>
+
+							      </div>
+										<div class="modal-footer">
+							        <button type="button" class="btn btn-default" data-dismiss="modal">Close</button>
+							        <button type="button" id="save_collection" class="btn btn-primary"><span class="glyphicon glyphicon-floppy-save" aria-hidden="true"></span> Save</button>
+							      </div>
+							    </div>
+							  </div>
+							</div>
+						</div>
+            <div class="form-group form-inline">
+              <label class="sr-only" for="keyword">Key word</label>
+              <div class="input-group">
+                <div class="input-group-addon">#</div>
+                <input type="text" class="form-control" id="keyword" value="SMCaen" required>
+              </div>
+							<select id="date" class="form-control">
+							</select>
+							<input type="number" id="count" class="form-control" placeholder="Nombre de résultats" required>
+            </div>
+            <button type="submit" class="btn btn-primary">Start research</button>
+          </form>
+				</div>
+        <hr/>
+        <div>
+          <h3>Step <span id="step_number">1</span>: <span id="step_label">Type a keyword and start the research</span></h3>
+          <p id="res" class="alert alert-info" style="display:none"></p>
+          <div id="subStep_container" style="display:none">
+            <p class="text-center"><em id="sub_step">Calcul des requêtes</em></p>
+            <div class="progress">
+              <div id="subStep_bar" class="progress-bar" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" style="width: 0%;">
+              </div>
+            </div>
+          </div>
+        </div>
+			</div>
+		</div>
+    <script src="https://code.jquery.com/jquery-1.10.2.js"></script>
+		<script src="//maxcdn.bootstrapcdn.com/bootstrap/3.3.1/js/bootstrap.min.js"></script>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+      var socket = io.connect('http://localhost:8080');
+			var collectionsName =[];
+
+			socket.on("match_dates", function(dates){
+				var today = new Date();
+				$('#date').append('<option>'+today.getUTCFullYear()+'-'+(today.getUTCMonth()+1)+'-'+today.getUTCDate()+'</option>');
+				for(i=1; i<=7; i++){
+					var date = new Date();
+					date.setDate(today.getDate()-i);
+					var date_str = date.getUTCFullYear()+'-'+(date.getUTCMonth()+1)+'-'+date.getUTCDate();
+
+					var k = dates.indexOf(date_str);
+					if(k > -1){
+						$('#date').append('<option style="color:red">'+date_str+'</option>');
+					} else {
+						$('#date').append('<option>'+date_str+'</option>');
+					}
+				}
+			});
+
+      $('form').submit(function(e){
+        e.preventDefault();
+				var date = new Date($('#date').val());
+				var reqDate = new Date();
+				reqDate.setDate(date.getDate()+1);
+				str_date = reqDate.getUTCFullYear()+'-'+(reqDate.getUTCMonth()+1)+'-'+reqDate.getUTCDate();
+
+				var data = {'keyword': '#'+$('#keyword').val(), 'date': str_date, 'count': $('#count').val(), 'collectionName': $("#collection_name").val()};
+        if(!$('form button').hasClass('disabled')){
+          socket.emit('submit_form', data);
+          $('form button').addClass('disabled');
+          setStep(2, 'Recherche de tweets');
+          $('#subStep_container').show();
+        }
+      });
+
+			// Add new collection to db
+			$('#save_collection').click(function(){
+				var new_collection = $('#new_collection').val()
+				// If collection name already in db
+				if($('#collections_string').html().indexOf(new_collection) == -1){
+					socket.emit('add_collection_name', new_collection);
+					$('#myModal').modal('hide');
+				} else {
+						$('#new_collection').parent().addClass('has-error');
+				}
+			});
+
+			// Receives collectionsNames
+			socket.on('collectionNames', function(collections) {
+				console.log(collections);
+				collectionsName = collections;
+				var string = "";
+				var element = document.getElementById('collection_name');
+				while (element.firstChild) {
+				  element.removeChild(element.firstChild);
+				}
+				for(i=0; i<collections.length; i++){
+					$('#collection_name').append('<option>'+collections[i].name+'</option>');
+					string+= collections[i].name;
+					if(i != collections.length-1)
+						string+= ", ";
+				}
+				$('#collections_string').html(string);
+			})
+
+      socket.on('twitter_request', function(data) {
+        setSubStep(data.i, data.i_max, data.total_tweets+" tweets récupérés");
+      });
+
+			socket.on('twitter_request_done', function(total_tweets){
+				$('#res').html('Etape 2 terminée : Récupération de '+total_tweets+' tweets.');
+        $('#res').show();
+				setTimeout(function(){
+					socket.emit('start_parsing_tweets', $('#collection_name').val());
+					setStep('3', 'Analyse du contenu des tweets et enregistrement en base de données');
+					setSubStep(0,0,"");
+				}, 1000);
+			});
+
+			// One file has been parsed
+			socket.on('file_parsed', function(i_file, file_number, i_tweet){
+				console.log(i_file, file_number, i_tweet);
+				setSubStep(i_file, file_number, i_tweet+" tweets analysés");
+			});
+
+			// All files have been parsed
+			socket.on('end_parsing', function(total_tweets){
+				setStep('4', 'Fin du traitement, vous pouvez utiliser ce nouveau jeu de données');
+				$('#res').html($('#res').html()+'<br/>Etape 3 terminée : Analyse et enregistrement de '+total_tweets+' tweets.');
+				//$('#subStep_container').hide();
+			});
+
+      function setStep(step_number, step_label){
+        $('#step_number').html(step_number);
+        $('#step_label').html(step_label);
+      }
+
+      function setSubStep(sub_step_number, max_sub_step, message){
+        $('#sub_step').html(message);
+        var ratio = (sub_step_number/max_sub_step)*100;
+        $('#subStep_bar').attr('style', 'width:'+ratio+'%');
+        $('#subStep_bar').attr('aria-valuenow', ratio);
+      }
+    </script>
+	</body>
+</html>

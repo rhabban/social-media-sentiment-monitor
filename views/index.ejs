@@ -1,0 +1,352 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <title>SM Caen</title>
+
+
+        <link rel="stylesheet" href="//bootswatch.com/yeti/bootstrap.min.css">
+        <script src="http://code.jquery.com/jquery-3.1.1.min.js"></script>
+        <!-- Jquery UI-->
+        <link rel="stylesheet" href="https://ajax.googleapis.com/ajax/libs/jqueryui/1.11.3/themes/smoothness/jquery-ui.css" />
+        <script src="https://ajax.googleapis.com/ajax/libs/jqueryui/1.11.3/jquery-ui.min.js"></script>
+        <script src="//maxcdn.bootstrapcdn.com/bootstrap/3.3.1/js/bootstrap.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-slider/9.2.2/bootstrap-slider.min.js"></script>
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-slider/9.2.2/css/bootstrap-slider.min.css"/>
+
+        <script src="https://code.highcharts.com/highcharts.js"></script>
+        <script src="https://code.highcharts.com/modules/exporting.js"></script>
+
+
+
+        <link href="https://cdn.datatables.net/plug-ins/1.10.7/integration/bootstrap/3/dataTables.bootstrap.css" rel="stylesheet" />
+        <script src="https://cdn.datatables.net/1.10.7/js/jquery.dataTables.min.js"></script>
+        <script src="https://cdn.datatables.net/plug-ins/1.10.7/integration/bootstrap/3/dataTables.bootstrap.js"></script>
+
+
+        <link rel="stylesheet" href="/css/main.css">
+    </head>
+    <body>
+        <div>
+            <div>
+                <nav class="navbar navbar-inverse" role="navigation" style="padding-left:130px;">
+                    <ul class="nav navbar-nav">
+                        <li><a class="navbar-brand" href="/">SM Caen</a></li>
+                        <li class="active"><a href="/">Home<span class="sr-only">(current)</span></a></li>
+                        <li><a href="/about">About</a></li>
+                        <li><a href="/call_api">Get Tweets</a></li>
+                    </ul>
+                </nav>
+            </div>
+            <br/>
+            <div class="container">
+                <div class="row">
+                    <h2> Search </h2>
+                    <div class="span12 jumbotron well">
+
+                        <div class="border row">
+                          <div class="border col-md-6">
+                          <h3> Select a collection </h3>
+                          <br/>
+
+                            <div class="form-group form-group-sm"">
+                                <label class="sr-only" for="collection">Collection Name</label>
+                                <select id="collection_name" class="form-control">
+                                    <option disabled selected value> -- select an option -- </option>
+                                </select>
+                            </div>
+
+                            <p class="lead" id="matchMessage"></p>
+                            <br>
+                            <button id="search" type="submit" class="btn btn-primary center-block btn-lg disabled">Search</button>
+                        </div>
+
+                          <div class="border col-md-6">
+                            <h3> Last matches</h3>
+                            <div id="matches" class="list-group">
+                              <% for(var i=0; i < matches.length; i++) {%>
+                              <span class="list-group-item" data-date=<%= matches[i].date %>><b> <%= matches[i].home %> </b> <i> <%= matches[i].score %> </i> <b> <%= matches[i].away %> </b>  - <%= matches[i].date %></span>
+                              <% } %>
+                            </div>
+                          </div>
+                        </div>
+                    </div>
+
+                    <h2> Tweets </h2>
+                        <table id="tweetsTable" class="table table-hover">
+                        <thead>
+                          <tr>
+                            <th>Author name</th>
+                            <th>Tweet</th>
+                            <th>Score</th>
+                            <th>Sentiment</th>
+                            <th>Date</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <h2> Graphs </h2>
+                    <div id="graphs" class="jumbotron well">
+                        <div id="container-pie"></div>
+                        <div id="container-graph"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </body>
+
+    <script src="/socket.io/socket.io.js"></script>    
+    <script>
+
+    //TABLE
+
+    var tweetsTable = $('#tweetsTable').DataTable();
+    $('#tweetsTable').on('click', '.clickable-row', function(event) {
+      $(this).addClass('active').siblings().removeClass('active');
+    });
+
+    //SOCKET
+
+    var socket = io.connect('http://localhost:8080');
+    var collectionsName =[];
+
+    // Receives collectionsNames
+    socket.on('collectionNames', function(collections) {
+        console.log(collections);
+        collectionsName = collections;
+        var string = "";
+        var element = document.getElementById('collection_name');
+        /*while (element.firstChild) {
+          element.removeChild(element.firstChild);
+        }*/
+        for(i=0; i<collections.length; i++){
+            $('#collection_name').append('<option>'+collections[i].name+'</option>');
+            string+= collections[i].name;
+            if(i != collections.length-1)
+                string+= ", ";
+        }
+        $('#collections_string').html(string);
+    })
+
+
+    //SELECT COLLETION NAME
+    $("#collection_name").change(function()
+    {
+        $("#search").removeClass("disabled");
+        socket.emit('findMatchInCollectionRequest', $('#collection_name').val());
+    });
+
+    socket.on('findMatchInCollectionResponse', function(message)
+    {
+        console.log(message);
+        $("#matchMessage").text(message);
+    });
+
+     //SEARCH
+
+    socket.on('tweetsFromCollectionName', function(tweets) 
+    {
+        positiveTweets = [];
+        negativeTweets = [];
+        neutralTweets = [];
+
+        $.each(tweets, function(index, item) 
+        {
+            var sentiment;
+
+            if(item.score.score == 0)
+            {
+                sentiment = "Neutral";
+                neutralTweets.push(item);
+            }
+
+            else if (item.score.score > 0) 
+            {
+                sentiment = "Positive";
+                positiveTweets.push(item);
+            }
+
+            else if (item.score.score < 0 )
+            {
+                sentiment = "Negative";
+                negativeTweets.push(item);
+            }
+
+            date = new Date(item.date);
+            date = date.getDate() + '/' + (date.getMonth() + 1) + '/' +  date.getFullYear();
+            setTimeout(function(){ tweetsTable.row.add( ["<a target='_blank' href = " + item.author_url + ">" +  item.author_name + "</a>", "<a target='_blank' href = " + item.url + ">" + item.text + "</a>", item.score.score, sentiment, date ] ).draw(); }, 500); 
+        });
+
+
+        // data for the graph
+        var negativeTweetsPerHour = [];
+        var positiveTweetsPerHour = [];
+        var neutralTweetsPerHour = [];
+
+        for (i = 0; i <= 24 ; i+=2) 
+        { 
+            negativeCount = 0;
+            positiveCount = 0;
+            neutralCount = 0;
+
+            $.each(negativeTweets, function(index, item) 
+            {
+                var temp = item.date.split(" ");
+                completeHour = temp[3];
+                hour = completeHour.substring(0, 2);
+
+                if(hour >= i && hour < i+2)
+                {
+                    negativeCount++;
+                }
+            });
+
+            $.each(positiveTweets, function(index, item) 
+            {
+                var temp = item.date.split(" ");
+                completeHour = temp[3];
+                hour = completeHour.substring(0, 2);
+
+                if(hour >= i && hour < i+2)
+                {
+                    positiveCount++;
+                }
+            });
+
+            $.each(neutralTweets, function(index, item) 
+            {
+                var temp = item.date.split(" ");
+                completeHour = temp[3];
+                hour = completeHour.substring(0, 2);
+
+                if(hour >= i && hour < i+2)
+                {
+                    neutralCount++;
+                }
+            });
+
+            negativeTweetsPerHour[i] = negativeCount;
+            positiveTweetsPerHour[i] = positiveCount;
+            neutralTweetsPerHour[i] = neutralCount;
+        }
+
+        pieChart(negativeTweets.length, positiveTweets.length, neutralTweets.length, $('#collection_name').val());
+        graphChart(negativeTweetsPerHour, positiveTweetsPerHour, neutralTweetsPerHour);
+    })
+
+    $(document).ready(function() 
+    {
+        $("#search").click(function()
+        {
+            if(!$( "#search" ).hasClass("disabled"))
+            {
+                tweetsTable.clear().draw();
+                socket.emit('tweetsRequest', $('#collection_name').val());
+            }
+            
+        });
+    });
+
+    //GRAPHS
+
+    //PIE CHART
+    var pieChart = function (negative, positive, neutral, match) {
+    Highcharts.chart('container-pie', {
+            chart: {
+                plotBackgroundColor: null,
+                plotBorderWidth: null,
+                plotShadow: false,
+                type: 'pie'
+            },
+            title: {
+                text: 'Tweets sentiment analysis for ' + match + " ( " + (negative + positive + neutral) + " results )"
+            },
+            tooltip: {
+                pointFormat: '{series.name}: <b>{point.percentage:.1f}%</b>'
+            },
+            plotOptions: {
+                pie: {
+                    allowPointSelect: true,
+                    cursor: 'pointer',
+                    dataLabels: {
+                        enabled: true,
+                        format: '<b>{point.name}</b>: {point.percentage:.1f} %',
+                        style: {
+                            color: (Highcharts.theme && Highcharts.theme.contrastTextColor) || 'black'
+                        }
+                    }
+                }
+            },
+            series: [{
+                name: 'Tweets',
+                colorByPoint: true,
+                data: [{
+                    name: 'Positive (' + positive + ')',
+                    y: positive,
+                    sliced: true,
+                    selected: true
+                }, {
+                    name: 'Negative (' + negative + ')',
+                    y: negative
+                }, {
+                    name: 'Neutral (' + neutral + ')',
+                    y: neutral
+                }]
+            }]
+        });
+    };
+
+
+
+    var graphChart = function (negativeTweetsPerHour, positiveTweetsPerHour, neutralTweetsPerHour) 
+    {
+        Highcharts.chart('container-graph', 
+        {
+            title: {
+                text: 'Tweets per hour',
+                x: -20 //center
+            },
+            xAxis: {
+                categories: [0.00, 2.00,4.00,6.00,8.00,10.00,12.00,14.00,16.00,18.00,20.00,22.00, 24.00],
+                title: {
+                    text: 'Hours'
+                },
+            },
+            yAxis: {
+                title: {
+                    text: 'Tweets'
+                },
+                plotLines: [{
+                    value: 0,
+                    width: 1,
+                    color: '#808080'
+                }]
+            },
+            tooltip: {
+                valueSuffix: ' tweets'
+            },
+            legend: {
+                layout: 'vertical',
+                align: 'right',
+                verticalAlign: 'middle',
+                borderWidth: 0
+            },
+            series: [{
+                name: 'Positive',
+                data: positiveTweetsPerHour
+            }, {
+                name: 'Negative',
+                data: negativeTweetsPerHour
+            }, {
+                name: 'Neutral',
+                data: neutralTweetsPerHour
+            }]
+        });
+    };
+
+    </script>
+</html>

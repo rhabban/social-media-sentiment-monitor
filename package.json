@@ -1,0 +1,10 @@
+{
+  "name" : "social-media-sentiment-monitor",
+  "version" : "0.0.1",
+  "scripts" : {
+    "start" : "node serveur.js"
+  },
+  "dependencies" : {
+    "express" : "latest"
+  }
+}
